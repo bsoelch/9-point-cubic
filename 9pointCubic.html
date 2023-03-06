@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html>
+<body style="width: 100%;heigth: 100%;">
+<canvas width="1920" height="1080" style="position:fixed;left:0;top:0;width:100%;height:100%;" id="canvasId">Canvas</canvas>
+</body>
+<script>
+let c=document.getElementById("canvasId");
+let ctx=c.getContext('2d');
+
+let scale=1;
+let x0=0,y0=0;//position of center of screen
+let baseX=1.6,baseY=0.9;// distance from center of screen to corer of screen if scale is 1
+addEventListener('wheel', (event) => {
+  scale*=event.deltaY>0?17/16:16/17;
+  update();
+});
+let prevX=0,prevY=0,dragging=false,pointMatch=-1;
+function getPoint(pointId){
+  switch(pointId){
+    case 0:return A;
+    case 1:return B;
+    case 2:return C;
+    case 3:return D;
+    case 4:return E;
+    case 5:return F;
+    case 6:return G;
+    case 7:return H;
+    case 8:return I;
+  }
+  console.log("unknown point id",pointId);
+  return [0,0,1];
+}
+function setPoint(pointId,newVal){
+  switch(pointId){
+    case 0:A=newVal;return;
+    case 1:B=newVal;return;
+    case 2:C=newVal;return;
+    case 3:D=newVal;return;
+    case 4:E=newVal;return;
+    case 5:F=newVal;return;
+    case 6:G=newVal;return;
+    case 7:H=newVal;return;
+    case 8:I=newVal;return;
+  }
+  console.log("unknown point id",pointId);
+}
+function findPointMatch(x,y){
+  pointMatch=-1;
+  for(let i=0;i<9;i++){
+    let p=getPoint(i);
+    let [px,py]=toScreenPos(p[0]/p[2],p[1]/p[2]);
+    if((x-px)*(x-px)+(y-py)*(y-py)<25){
+      pointMatch=i;
+      return;//TODO pick closest point if multiple match
+    }
+  }
+}
+addEventListener('mousedown', (event) => {
+  if(event.target.id!="canvasId")
+    return;
+  dragging=true;
+  findPointMatch(event.layerX*(c.width/c.offsetWidth),event.layerY*(c.height/c.offsetHeight));
+  prevX=event.layerX;
+  prevY=event.layerY;
+  update();
+});
+addEventListener('mousemove', (event) => {
+  if(dragging){
+    let dx=-(event.layerX-prevX)*(c.width/c.offsetWidth)*(2*scale*baseX/c.width);
+    let dy=(event.layerY-prevY)*(c.height/c.offsetHeight)*(2*scale*baseY/c.height);
+    prevX=event.layerX;
+    prevY=event.layerY;
+    if(pointMatch!=-1){
+      p=getPoint(pointMatch);
+      p[0]/=p[2];
+      p[1]/=p[2];
+      p[0]-=dx;
+      p[1]-=dy;
+      p[2]=1;
+      setPoint(pointMatch,p);
+    }else{
+      x0+=dx;
+      y0+=dy;
+    }
+    update();
+  }
+});
+addEventListener('mouseup', (event) => {
+  dragging=false;
+});
+
+let nX=16,nY=9;
+
+let debugX=5;
+let debug=false;
+
+function toScreenPos(x,y){
+  return [(((x-x0)/(baseX*scale))+1)*c.width/2,(1-((y-y0)/(baseY*scale)))*c.height/2];
+}
+
+function drawCurveSquare(f,cx0,cy0,cx1,cy1,dx,dy,f00,f01,f10,f11,color,checkOnly){
+  if(cx1-cx0<(4*scale*baseX/c.width)&&cy1-cy0<(4*scale*baseY/c.height)){
+    if(checkOnly)
+      return;
+    [sx0,sy0]=toScreenPos(cx0,cy0);
+    [sx1,sy1]=toScreenPos(cx1,cy1);
+    //XXX? draw line depending on linear interpolation
+    ctx.fillRect(sx0,sy0,sx1-sx0,sy1-sy0);
+    return;
+  }
+  if(debug){
+    [sx0,sy0]=toScreenPos(cx0,cy0);
+    [sx1,sy1]=toScreenPos(cx1,cy1);
+    ctx.strokeStyle=checkOnly?"#ffff00":"#ffffff"
+    ctx.strokeRect(sx0,sy0,sx1-sx0,sy1-sy0);
+  }
+  let cx=(cx0+cx1)/2;
+  let cy=(cy0+cy1)/2;
+  // f00 fx0 f10
+  // f0y fxy f1y
+  // f01 fx1 f11
+  let fx0=localValues(f,cx,cy0,dx,dy),f0y=localValues(f,cx0,cy,dx,dy),fxy=localValues(f,cx,cy,dx,dy),f1y=localValues(f,cx1,cy,dx,dy),fx1=localValues(f,cx,cy1,dx,dy);
+  if(!((f00[0]>0&&fx0[0]>0&&f0y[0]>0&&fxy[0]>0)||(f00[0]<0&&fx0[0]<0&&f0y[0]<0&&fxy[0]<0))){//function crosses edge of top left square 
+    drawCurveSquare(f,cx0,cy0,cx,cy,dx,dy,f00,f0y,fx0,fxy,color,false);
+  }else if((f00[1]*fx0[1]<0||f00[2]*f0y[2]<0||f0y[1]*fxy[1]<0||fx0[2]*fxy[2]<0)||
+           (f00[3]*fx0[3]<0||f00[4]*f0y[4]<0||f0y[3]*fxy[3]<0||fx0[4]*fxy[4]<0)){//first or 2nd derivative crosses edge
+    drawCurveSquare(f,cx0,cy0,cx,cy,dx,dy,f00,f0y,fx0,fxy,color,true);
+  }
+  if(!((f10[0]>0&&fx0[0]>0&&f1y[0]>0&&fxy[0]>0)||(f10[0]<0&&fx0[0]<0&&f1y[0]<0&&fxy[0]<0))){//function crosses edge of top right square
+    drawCurveSquare(f,cx,cy0,cx1,cy,dx,dy,fx0,fxy,f10,f1y,color,false);
+  }else if((fx0[1]*f10[1]<0||fx0[2]*fxy[2]<0||fxy[1]*f1y[1]<0||f10[2]*f1y[2]<0)||
+           (fx0[3]*f10[3]<0||fx0[4]*fxy[4]<0||fxy[3]*f1y[3]<0||f10[4]*f1y[4]<0)){//first or 2nd derivative crosses edge
+    drawCurveSquare(f,cx,cy0,cx1,cy,dx,dy,fx0,fxy,f10,f1y,color,true);
+  }
+  if(!((f01[0]>0&&fx1[0]>0&&f0y[0]>0&&fxy[0]>0)||(f01[0]<0&&fx1[0]<0&&f0y[0]<0&&fxy[0]<0))){//function crosses edge of bottom left square
+    drawCurveSquare(f,cx0,cy,cx,cy1,dx,dy,f0y,f01,fxy,fx1,color,false);
+  }else if((f0y[1]*fxy[1]<0||f0y[2]*f01[2]<0||f01[1]*fx1[1]<0||fxy[2]*fx1[2]<0)||
+           (f0y[3]*fxy[3]<0||f0y[4]*f01[4]<0||f01[3]*fx1[3]<0||fxy[4]*fx1[4]<0)){//first or 2nd derivative crosses edge
+    drawCurveSquare(f,cx0,cy,cx,cy1,dx,dy,f0y,f01,fxy,fx1,color,true);
+  }
+  if(!((fxy[0]>0&&f1y[0]>0&&fx1[0]>0&&f11[0]>0)||(fxy[0]<0&&f1y[0]<0&&fx1[0]<0&&f11[0]<0))){//function crosses edge of bottom right square
+    drawCurveSquare(f,cx,cy,cx1,cy1,dx,dy,fxy,fx1,f1y,f11,color,false);
+  }else if((fxy[1]*f1y[1]<0||fxy[2]*fx1[2]<0||fx1[1]*f11[1]<0||f1y[2]*f11[2]<0)||
+           (fxy[3]*f1y[3]<0||fxy[4]*fx1[4]<0||fx1[3]*f11[3]<0||f1y[4]*f11[4]<0)){//first or 2nd derivative crosses edge
+    drawCurveSquare(f,cx,cy,cx1,cy1,dx,dy,fxy,fx1,f1y,f11,color,true);
+  }
+}
+function drawCurve(f,color){
+  ctx.fillStyle=color;
+  let dx=scale*baseX/c.width;
+  let dy=scale*baseY/c.height;
+  let xMin=x0-baseX*scale,xMax=x0+baseX*scale;
+  let yMin=y0-baseY*scale,yMax=y0+baseY*scale;
+  for(let i=0;i<nX;i++){
+    for(let j=0;j<nY;j++){
+      let cx0=(xMin+(i*(xMax-xMin))/nX);
+      let cx1=(xMin+((i+1)*(xMax-xMin))/nX);
+      let cy0=(yMin+(j*(yMax-yMin))/nY);
+      let cy1=(yMin+((j+1)*(yMax-yMin))/nY);
+      let cx=(cx0+cx1)/2;
+      let cy=(cy0+cy1)/2;
+      let f00=localValues(f,cx0,cy0,dx,dy),f01=localValues(f,cx0,cy1,dx,dy),f10=localValues(f,cx1,cy0,dx,dy),f11=localValues(f,cx1,cy1,dx,dy);//values at corners of square
+      
+      if(debug&&cx0<px&&px<cx1&&cy0<py&&py<cy1){
+        console.log(f00,f01,f10,f11);
+      }
+      
+      if((f00[0]>0&&f01[0]>0&&f10[0]>0&&f11[0]>0)||(f00[0]<0&&f01[0]<0&&f10[0]<0&&f11[0]<0)){
+        if((f00[1]*f10[1]<0||f00[2]*f01[2]<0||f01[1]*f11[1]<0||f10[2]*f11[2]<0)||
+           (f00[3]*f10[3]<0||f00[4]*f01[4]<0||f01[3]*f11[3]<0||f10[4]*f11[4]<0)){//check if derivatives at corners have same sign (allows to detect cases with double crossings of line)
+          drawCurveSquare(f,cx0,cy0,cx1,cy1,dx,dy,f00,f01,f10,f11,color,true);
+        }
+        continue;//function (probably) not in square
+      }
+      drawCurveSquare(f,cx0,cy0,cx1,cy1,dx,dy,f00,f01,f10,f11,color,false);
+    }
+  }
+}
+//return (f(x,y),df/dx(x,y),df/dy(x,y),d²f/dx²(x,y),d²f/dy²(x,y)
+function localValues(f,x,y,dx,dy){
+  let v=f(x,y);
+  let vx=f(x+dx,y);
+  let vy=f(x,y+dy);
+  let vx_=f(x-dx,y);
+  let vy_=f(x,y-dy);
+  res= [v,(vx-v)/dx,(vy-v)/dy,(vx-2*v+vx_)/(dx*dx),(vy-2*v+vy_)/(dy*dy)];
+  epsilon=1E-10;//round small values down to 0
+  if(Math.abs(res[1]/res[0])<epsilon)
+    res[1]=0;
+  if(Math.abs(res[2]/res[0])<epsilon)
+    res[2]=0;
+  if(Math.abs(res[3]/res[0])<epsilon)
+    res[3]=0;
+  if(Math.abs(res[4]/res[0])<epsilon)
+    res[4]=0;
+  return res;
+}
+
+let A=[0,0,1],B=[0.5,0.125,1],C=[-0.5,-0.125,1],D=[1,1,1],E=[-1,-1,1],F=[1.25,1.953125,1],G=[-1.4,-2.744,1],H=[1.1,1.331,1],I=[-1.2,-1.728,1];
+//precomputed determinants
+let ABI=0,EFG=0,ABE=0,ADH=0,CFI=0,CDI=0,ABH=0,CDG=0,ABG=0,BCI=0,CFG=0,EFI=0,CDE=0,FGI=0,DEG=0,AFG=0,FGH=0,ADE=0,BCH=0,BEH=0,BCE=0,BEG=0,AFI=0,DEI=0,BEI=0,ADI=0,CDH=0,AFH=0,DEH=0,EFH=0,CFH=0;
+function det(p,q,r){
+  // p0 q0 r0
+  // p1 q1 r1
+  // p2 q2 r2
+  return p[0]*q[1]*r[2]+q[0]*r[1]*p[2]+r[0]*p[1]*q[2]-p[0]*q[2]*r[1]-q[0]*r[2]*p[1]-r[0]*p[2]*q[1];
+}
+function onCubic(P){//checks if P is on the cubic defined by A B C D E F G H I, works if the 9 points are in general position
+  //bracket polynomial obtained through linear combination of 3 degenerate cubics through 7 points
+  return ((((ABH*CDH*ADE*BCE*FGH-ABE*CDE*ADH*BCH*FGH)*(CDI*EFI*CFG*DEG*ABI-CDG*EFG*CFI*DEI*ABI))-
+  ((CDH*EFH*CFG*DEG*ABH-CDG*EFG*CFH*DEH*ABH)*(ABI*CDI*ADE*BCE*FGI-ABE*CDE*ADI*BCI*FGI)))*
+  (((CDH*EFH*CFG*DEG*ABH-CDG*EFG*CFH*DEH*ABH)*(det(A,B,P)*det(E,F,P)*AFG*BEG*det(C,D,P)-ABG*EFG*det(A,F,P)*det(B,E,P)*det(C,D,P)))-
+  ((ABH*EFH*AFG*BEG*CDH-ABG*EFG*AFH*BEH*CDH)*(det(C,D,P)*det(E,F,P)*CFG*DEG*det(A,B,P)-CDG*EFG*det(C,F,P)*det(D,E,P)*det(A,B,P)))))-
+  ((((CDH*EFH*CFG*DEG*ABH-CDG*EFG*CFH*DEH*ABH)*(ABI*EFI*AFG*BEG*CDI-ABG*EFG*AFI*BEI*CDI))-
+  ((ABH*EFH*AFG*BEG*CDH-ABG*EFG*AFH*BEH*CDH)*(CDI*EFI*CFG*DEG*ABI-CDG*EFG*CFI*DEI*ABI)))* 
+  (((ABH*CDH*ADE*BCE*FGH-ABE*CDE*ADH*BCH*FGH)*(det(C,D,P)*det(E,F,P)*CFG*DEG*det(A,B,P)-CDG*EFG*det(C,F,P)*det(D,E,P)*det(A,B,P)))-
+  ((CDH*EFH*CFG*DEG*ABH-CDG*EFG*CFH*DEH*ABH)*(det(A,B,P)*det(C,D,P)*ADE*BCE*det(F,G,P)-ABE*CDE*det(A,D,P)*det(B,C,P)*det(F,G,P)))));
+}
+
+function update(){
+  ctx.clearRect(0, 0, c.width, c.height);
+	ctx.fillStyle= '#000000';
+  ctx.fillRect(0, 0, c.width, c.height);
+  
+  //update precomputed determinants
+  ABI=det(A,B,I);
+  EFG=det(E,F,G);
+  ABE=det(A,B,E);
+  ADH=det(A,D,H);
+  CFI=det(C,F,I);
+  CDI=det(C,D,I);
+  ABH=det(A,B,H);
+  CDG=det(C,D,G);
+  ABG=det(A,B,G);
+  BCI=det(B,C,I);
+  CFG=det(C,F,G);
+  EFI=det(E,F,I);
+  CDE=det(C,D,E);
+  FGI=det(F,G,I);
+  DEG=det(D,E,G);
+  AFG=det(A,F,G);
+  FGH=det(F,G,H);
+  ADE=det(A,D,E);
+  BCH=det(B,C,H);
+  BEH=det(B,E,H);
+  BCE=det(B,C,E);
+  BEG=det(B,E,G);
+  AFI=det(A,F,I);
+  DEI=det(D,E,I);
+  BEI=det(B,E,I);
+  ADI=det(A,D,I);
+  CDH=det(C,D,H);
+  AFH=det(A,F,H);
+  DEH=det(D,E,H);
+  EFH=det(E,F,H);
+  CFH=det(C,F,H);
+    
+	drawCurve((x,y)=>onCubic([x,y,1]),'#00ff00');
+	
+  let [x,y]=toScreenPos(A[0]/A[2],A[1]/A[2]);
+	ctx.fillStyle= '#ffffff';
+  ctx.fillRect(x-4,y-4,8,8);
+  [x,y]=toScreenPos(B[0]/B[2],B[1]/B[2]);
+	ctx.fillStyle= '#ffffff';
+  ctx.fillRect(x-4,y-4,8,8);
+  [x,y]=toScreenPos(C[0]/C[2],C[1]/C[2]);
+	ctx.fillStyle= '#ffffff';
+  ctx.fillRect(x-4,y-4,8,8);
+  [x,y]=toScreenPos(D[0]/D[2],D[1]/D[2]);
+	ctx.fillStyle= '#ffffff';
+  ctx.fillRect(x-4,y-4,8,8);
+  [x,y]=toScreenPos(E[0]/E[2],E[1]/E[2]);
+	ctx.fillStyle= '#ffffff';
+  ctx.fillRect(x-4,y-4,8,8);
+  [x,y]=toScreenPos(F[0]/F[2],F[1]/F[2]);
+	ctx.fillStyle= '#ffffff';
+  ctx.fillRect(x-4,y-4,8,8);
+  [x,y]=toScreenPos(G[0]/G[2],G[1]/G[2]);
+	ctx.fillStyle= '#ffffff';
+  ctx.fillRect(x-4,y-4,8,8);
+  [x,y]=toScreenPos(H[0]/H[2],H[1]/H[2]);
+	ctx.fillStyle= '#ffffff';
+  ctx.fillRect(x-4,y-4,8,8);
+  [x,y]=toScreenPos(I[0]/I[2],I[1]/I[2]);
+	ctx.fillStyle= '#ffffff';
+  ctx.fillRect(x-4,y-4,8,8);
+  
+  
+}
+update();
+</script>
+</html>

@@ -3,7 +3,7 @@
 Simple JavaScript program that displays the cubic going through 9 given points.
 
 ## usage
- simply open the html file in your browser (mobile browsers are not directly supported)
+ simply open the [html file](https://bsoelch.github.io/9-point-cubic/) in your browser  (mobile browsers are not directly supported)
  
  the view area and points can be dragged with the mouse.
  
